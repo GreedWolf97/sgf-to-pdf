@@ -1,0 +1,17 @@
+# Python / virtual environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Generated files
+output/
+tmp/
+*.pdf
+.env
