@@ -89,7 +89,7 @@ class SGFParser:
 
 def read_sgf(path: Path):
     data = path.read_bytes()
-    match = re.search(rb'CA\[([^\]]+)\]', data)
+    match = re.search(rb'CA\[([^]]+)]', data)
     encodings = [match.group(1).decode('ascii')] if match else ['utf-8-sig', 'gb18030']
     for encoding in encodings:
         try:
@@ -161,6 +161,7 @@ def pdf_dependencies():
 def chinese_font():
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
+    # noinspection SpellCheckingInspection
     candidates = [os.environ.get('SGF_FONT', ''), 'C:/Windows/Fonts/msyh.ttc',
                   'C:/Windows/Fonts/simsun.ttc', '/usr/share/fonts/truetype/arphic/uming.ttc']
     for path in candidates:
@@ -170,7 +171,7 @@ def chinese_font():
     raise ValueError('未找到中文字体；请设置 SGF_FONT 为中文 TrueType 字体文件路径')
 
 
-def metadata(root, size, count):
+def metadata(root, count):
     result = []
     for color, name, rank, team in [('黑方', 'PB', 'BR', 'BT'), ('白方', 'PW', 'WR', 'WT')]:
         parts = [root[k][0] for k in (name, rank, team) if root.get(k, [''])[0]]
@@ -207,15 +208,19 @@ def write_pdf(tree, destination):
     font = chinese_font()
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
+    # noinspection SpellCheckingInspection
     korean_path = Path('C:/Windows/Fonts/malgun.ttf')
     if korean_path.is_file():
         pdfmetrics.registerFont(TTFont('RecordKorean', str(korean_path)))
-    def rich_text(text):
-        text = escape(text).replace('\n', '<br/>').replace('\\n', '<br/>')
+    def korean_span(match: re.Match[str]) -> str:
+        return '<font name="RecordKorean">' + match.group(0) + '</font>'
+
+    def rich_text(text: str) -> str:
+        escaped_text: str = str(escape(text)).replace('\n', '<br/>').replace('\\n', '<br/>')
         if korean_path.is_file():
-            text = re.sub(r'[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]+',
-                          lambda m: '<font name="RecordKorean">' + m[0] + '</font>', text)
-        return text
+            escaped_text = re.sub(r'[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]+',
+                                  korean_span, escaped_text)
+        return escaped_text
     red = '#cf202c'
     style = ParagraphStyle('info', fontName=font, fontSize=9, leading=13,
                            wordWrap='CJK', spaceAfter=2)
@@ -274,8 +279,8 @@ def write_pdf(tree, destination):
             inset = 9 * mm
             length = self.width - inset * 2
             step = length / (size - 1)
-            def xy(x, y):
-                return inset + x * step, self.height - inset - y * step
+            def xy(column_index, row_index):
+                return inset + column_index * step, self.height - inset - row_index * step
             c.setStrokeColor(colors.HexColor('#555555'))
             c.setLineWidth(0.45)
             for i in range(size):
@@ -325,11 +330,19 @@ def write_pdf(tree, destination):
                             title=root.get('GN', [''])[0], author='SGF 手记棋谱转换工具')
     title = root.get('GN', [''])[0].strip()
     story = [Paragraph(rich_text(title), title_style)] if title else []
-    info = metadata(root, size, count)
+    info = metadata(root, count)
     rows = [[paragraph(info[i]), paragraph(info[i+1]) if i+1 < len(info) else '']
             for i in range(0, len(info), 2)]
-    # 与居中棋盘的网格等宽，而不是铺满页面正文宽度。
-    table = Table(rows, colWidths=[74*mm, 74*mm], hAlign='CENTER')
+    # 按文字实际宽度居中整块信息，避免两列短文字在宽表格中显得偏左。
+    # 表格宽度独立于棋盘的单页自适应缩放，缩小棋盘后仍保持视觉居中。
+    info_widths = [
+        max(40*mm, min(68*mm, max(
+            (pdfmetrics.stringWidth(line, font, 9) for line in info[column::2]),
+            default=0) + 12*mm))
+        for column in range(2)
+    ]
+    table = Table(rows, colWidths=info_widths, hAlign='CENTER')
+    # noinspection SpellCheckingInspection
     table.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'),
                               ('LEFTPADDING', (0, 0), (-1, -1), 0),
                               ('RIGHTPADDING', (0, 0), (-1, -1), 8),
