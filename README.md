@@ -1,5 +1,13 @@
 # SGF to PDF
 
+将 SGF 棋谱转换为可直接打印的 A4 数字手记棋谱：黑棋黑字、白棋红字，重复落点在棋盘下方分组标注。
+
+## 效果预览
+
+以下为 `inputs/` 中棋谱生成的单页 PDF 预览，包含对局信息、传统坐标和重复落点记录。
+
+![SGF 转 PDF 效果：对局信息、红黑数字棋盘及重复落点标注](docs/images/game-record-preview.png)
+
 ## 安装
 
 使用 Python 3.10 或以上，在项目目录执行：
@@ -7,6 +15,15 @@
 ```powershell
 python -m pip install -r requirements.txt
 ```
+
+如使用编辑器，请选择安装了依赖的 Python 解释器。也可创建项目虚拟环境：
+
+```powershell
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+然后在编辑器中选择 `.venv/Scripts/python.exe`，使用该解释器运行脚本。
 
 Windows 自动读取系统中文字体。其他系统需将 `SGF_FONT` 环境变量设为中文 TrueType 字体文件路径。
 
