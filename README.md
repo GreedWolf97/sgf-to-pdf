@@ -6,7 +6,7 @@
 
 以下为 `inputs/` 中棋谱生成的单页 PDF：上方为整体居中的对局信息，下方为传统坐标棋盘及分组显示的重复落点记录。
 
-![SGF 转 PDF 效果：对局信息、红黑数字棋盘及重复落点标注](docs/images/game-record-preview.png)
+![img.png](img.png)
 
 ## 安装
 

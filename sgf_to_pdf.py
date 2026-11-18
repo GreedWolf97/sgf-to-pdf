@@ -199,15 +199,16 @@ def metadata(root, count):
 
 def write_pdf(tree, destination):
     pdf_dependencies()
+    # noinspection PyUnresolvedReferences
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Flowable, Table, TableStyle
-    root, size, spots, setup, passes, count = collect(tree)
-    font = chinese_font()
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
+    root, size, spots, setup, passes, count = collect(tree)
+    font = chinese_font()
     # noinspection SpellCheckingInspection
     korean_path = Path('C:/Windows/Fonts/malgun.ttf')
     if korean_path.is_file():
@@ -224,8 +225,6 @@ def write_pdf(tree, destination):
     red = '#cf202c'
     style = ParagraphStyle('info', fontName=font, fontSize=9, leading=13,
                            wordWrap='CJK', spaceAfter=2)
-    repeat_style = ParagraphStyle('repeated_moves', fontName='Helvetica-Bold',
-                                  fontSize=10, leading=14)
     title_style = ParagraphStyle('title', parent=style, fontSize=18, leading=24,
                                  alignment=1, spaceAfter=10)
     def paragraph(text):
@@ -234,21 +233,35 @@ def write_pdf(tree, destination):
         return f'<font color="{red if color == "W" else "#171717"}">{number}</font>'
 
     class RepeatBoxes(Flowable):
-        """每处重复落点一个框，依次排列，超宽时在框内换行。"""
-        def __init__(self, groups):
+        """每处重复落点一个框，依次排列，超宽时在框内换行。只画框，不填充底色。"""
+
+        def __init__(self, groups, font_size):
             super().__init__()
             self.width = 148 * mm
             self.hAlign = 'CENTER'
+            self.groups = groups
+            self.font_size = float(font_size)
+            self.h_padding = 6  # 水平内边距
+            self.v_padding = 3  # 上下内边距，收紧框高
+            self.gap = 7  # 框间距
+            self._layout()
+
+        def _layout(self):
             self.items = []
             x = y = row_height = 0
-            padding, gap = 6, 7
-            for moves in groups:
+            h_padding, v_padding, gap = self.h_padding, self.v_padding, self.gap
+            repeat_style = ParagraphStyle(
+                'repeated_moves', fontName='Helvetica-Bold',
+                fontSize=self.font_size, leading=self.font_size * 1.2)
+            for moves in self.groups:
                 plain = str(moves[0][0]) + ' = ' + ', '.join(str(n) for n, _ in moves[1:])
-                width = min(self.width, pdfmetrics.stringWidth(plain, 'Helvetica-Bold', 10) + padding*2)
-                text = colored(*moves[0]) + ' = ' + ', '.join(colored(n, c) for n, c in moves[1:])
+                width = min(self.width, pdfmetrics.stringWidth(
+                    plain, 'Helvetica-Bold', self.font_size) + h_padding * 2)
+                text = colored(*moves[0]) + ' = ' + ', '.join(
+                    colored(n, c) for n, c in moves[1:])
                 para = Paragraph(text, repeat_style)
-                _, text_height = para.wrap(width-padding*2, 10000)
-                height = text_height + padding*2
+                _, text_height = para.wrap(width - h_padding * 2, 10000)
+                height = text_height + v_padding * 2
                 if x and x + width > self.width:
                     y += row_height + gap
                     x = row_height = 0
@@ -257,15 +270,19 @@ def write_pdf(tree, destination):
                 row_height = max(row_height, height)
             self.height = y + row_height
 
+        def set_font_size(self, font_size):
+            self.font_size = float(font_size)
+            self._layout()
+
         def draw(self):
             c = self.canv
             for x, y, width, height, para in self.items:
-                bottom = self.height-y-height
-                c.setFillColor(colors.HexColor('#f4f4f4'))
+                bottom = self.height - y - height
+                # 只描边，不填充灰色底色
                 c.setStrokeColor(colors.HexColor('#bcbcbc'))
                 c.setLineWidth(.5)
-                c.roundRect(x, bottom, width, height, 3, fill=1, stroke=1)
-                para.drawOn(c, x+6, bottom+6)
+                c.roundRect(x, bottom, width, height, 3, fill=0, stroke=1)
+                para.drawOn(c, x + self.h_padding, bottom + self.v_padding)
 
     class Board(Flowable):
         def __init__(self):
@@ -273,6 +290,7 @@ def write_pdf(tree, destination):
             self.width = 166 * mm
             self.height = 166 * mm
             self.hAlign = 'CENTER'
+            self.move_font_size = 11.0  # 棋盘上手数的实际基准字号，供重复落子参考
 
         def draw(self):
             c = self.canv
@@ -310,11 +328,13 @@ def write_pdf(tree, destination):
                     c.setFillColor(colors.black if color == 'B' else colors.white)
                     c.setStrokeColor(colors.black)
                     c.circle(*xy(x, y), step * .34, stroke=1, fill=1)
+            # 记录棋盘手数的基准字号（上限 11，随 step 缩小）
+            self.move_font_size = float(min(11, step * .68))
             for (x, y), moves in spots.items():
                 number, color = moves[0]
                 cx, cy = xy(x, y)
                 text = str(number)
-                font_size = min(11, step * .68, step * 1.45 / len(text))
+                font_size = float(min(11, step * .68, step * 1.45 / len(text)))
                 c.setFont('Helvetica-Bold', font_size)
                 text_width = c.stringWidth(text, 'Helvetica-Bold', font_size)
                 c.setFillColor(colors.white)
@@ -351,11 +371,16 @@ def write_pdf(tree, destination):
     story.append(table)
     board = Board()
     story += [Spacer(1, 4*mm), board, Spacer(1, 3*mm)]
-    repeats = sorted((moves for moves in spots.values() if len(moves) > 1), key=lambda m: m[0][0])
+    repeats = sorted((moves for moves in spots.values() if len(moves) > 1),
+                     key=lambda m: m[0][0])
+    repeat_box = None
     if repeats:
-        story.append(RepeatBoxes(repeats))
+        # 先按棋盘初始字号构造，稍后随棋盘缩小重新设置字号
+        repeat_box = RepeatBoxes(repeats, min(10.0, board.move_font_size * 0.9))
+        story.append(repeat_box)
     if passes:
-        story.append(paragraph('停着：' + '，'.join(f'{n}（{"黑" if c == "B" else "白"}）' for n, c in passes)))
+        story.append(paragraph('停着：' + '，'.join(
+            f'{n}（{"黑" if c == "B" else "白"}）' for n, c in passes)))
     # 先测量实际内容；优先保留字号和页边距，通过缩小棋盘容纳说明。
     available_width = doc.width - 12
     available_height = doc.height - 12
@@ -366,6 +391,15 @@ def write_pdf(tree, destination):
         board.width = board.height = board.height - overflow
         if board.height < 120*mm:
             raise ValueError('对局信息或重复落点过多，无法在保持可读字号的情况下排入一页')
+        # 棋盘缩小后，按实际 step 重新估算棋盘手数基准字号；
+        # 重复落子字号必须严格小于棋盘手数字号，随棋盘一起缩小。
+        board_inset = 9 * mm
+        board_step = (board.width - board_inset * 2) / (size - 1)
+        board_move_size = float(min(11, board_step * .68))
+        board.move_font_size = board_move_size
+        if repeat_box is not None:
+            repeat_font = float(min(board_move_size * 0.9, 10.0))
+            repeat_box.set_font_size(repeat_font)
     def footer(canvas, document):
         canvas.setFont(font, 8)
         canvas.setFillColor(colors.HexColor('#666666'))
